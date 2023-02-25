@@ -119,4 +119,4 @@ if __name__ == '__main__':
     train_nn2(net, num_epochs, train_iter, loss_function, optimizer,batch_size)
     show_result(net, test_iter,30)
 
-    torch.save({'model': net.state_dict()}, 'classification.pth')
+    torch.save({'model': net.state_dict()}, './checkpoint/classification.pth')

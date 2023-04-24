@@ -9,6 +9,8 @@ from modules.keypoints import extract_keypoints, group_keypoints
 from modules.load_state import load_state
 from modules.pose import Pose, track_poses
 from val import normalize, pad_width
+from train_my import Net 
+import glob
 
 
 class ImageReader(object):
@@ -79,7 +81,12 @@ def infer_fast(net, img, net_input_height_size, stride, upsample_ratio, cpu,
     return heatmaps, pafs, scale, pad
 
 
-def run_demo(net, image_provider, height_size, cpu, track, smooth):
+def run_demo(net, image_provider,mode, height_size, cpu, track, smooth):
+    """
+    mode == 0 : 图片
+    mode == 1 : 摄像头
+    mode == 2 : 视频
+    """
     net = net.eval()
     if not cpu:
         net = net.cuda()
@@ -91,7 +98,12 @@ def run_demo(net, image_provider, height_size, cpu, track, smooth):
     delay = 1
     i = 0
     f = open('data.txt','w')
-    for img in image_provider:
+
+    def inner(img):    
+        nonlocal num_keypoints
+        nonlocal previous_poses
+        nonlocal delay
+        
         orig_img = img.copy()
         heatmaps, pafs, scale, pad = infer_fast(net, img, height_size, stride, upsample_ratio, cpu)
 
@@ -120,34 +132,33 @@ def run_demo(net, image_provider, height_size, cpu, track, smooth):
         print(str(x) + "\n")
         #f.write(x+ "\n")
         
-
-
-
-        
-        
-    # 将数据写入
-        
         if track:
             track_poses(previous_poses, current_poses, smooth=smooth)
             previous_poses = current_poses
         
-         
+        
         img = cv2.addWeighted(orig_img, 0.6, img, 0.4, 0)
         
         #for pose in current_poses:
             #cv2.rectangle(img, (pose.bbox[0], pose.bbox[1]),
-                          #(pose.bbox[0] + pose.bbox[2], pose.bbox[1] + pose.bbox[3]), (0, 255, 0))
+                        #(pose.bbox[0] + pose.bbox[2], pose.bbox[1] + pose.bbox[3]), (0, 255, 0))
             
+        
+        return img
+        # key = cv2.waitKey(delay)
+        # if key == 27:  # esc
+        #     return
+        # elif key == 112:  # 'p'
+        #     if delay == 1:
+        #         delay = 0
+        #     else:
+        #         delay = 1
+    for img in image_provider:
+        img = inner(img)
         cv2.imshow('Lightweight Human Pose Estimation Python Demo', img)
-        key = cv2.waitKey(delay)
-        if key == 27:  # esc
-            return
-        elif key == 112:  # 'p'
-            if delay == 1:
-                delay = 0
-            else:
-                delay = 1
-    #return 
+        key = cv2.waitKey(1)
+        if key == ord('q'):
+            break
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -165,15 +176,23 @@ if __name__ == '__main__':
 
     if args.video == '' and args.images == '':
         raise ValueError('Either --video or --image has to be provided')
-
     net = PoseEstimationWithMobileNet()
     checkpoint = torch.load("./checkpoint/checkpoint_iter_370000.pth", map_location='cuda')
     load_state(net, checkpoint)
 
-    frame_provider = ImageReader(args.images)
-    if args.video != '':
+
+    
+   
+    # if args.video != '':
+    #     
+    # else:
+    #     args.track = 0
+    mode = 1
+    if mode == 0:
+        # frame_provider = ImageReader(glob.glob("./img/*.jpg"))
+        frame_provider = [cv2.imread("./img/1.jpg", cv2.IMREAD_COLOR)]
+    elif mode == 1:
         frame_provider = VideoReader(args.video)
     else:
-        args.track = 0
-
-    run_demo(net, frame_provider, args.height_size, args.cpu, args.track, args.smooth)
+        frame_provider = VideoReader("./test_data/video.mp4")
+    run_demo(net, frame_provider, mode,args.height_size, args.cpu, args.track, args.smooth)

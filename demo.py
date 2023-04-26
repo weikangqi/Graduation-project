@@ -1,4 +1,5 @@
 import argparse
+from PIL import Image, ImageDraw, ImageFont
 
 import cv2
 import numpy as np
@@ -11,7 +12,7 @@ from modules.pose import Pose, track_poses
 from val import normalize, pad_width
 from train_my import Net 
 import glob
-key_dict = {0:"Sitting upright",1:"Right crooked head",2:"Left crooked head",3:"Right shoulder lift",4:"Left shoulder lift",5:"Bow head",6:"face upward"}
+key_dict = {0:"正坐",1:"Right  head",2:"Left crooked head",3:"Right shoulder lift",4:"Left shoulder lift",5:"Bow head",6:"face upward"}
 classification = {0:"正坐",1:"右歪头",2:"左歪头",3:"右抬肩",4:"左抬肩",5:"低头",6:"仰头"}
 
 class ImageReader(object):
@@ -50,9 +51,22 @@ class VideoReader(object):
         was_read, img = self.cap.read()
         if not was_read:
             raise StopIteration
+      
+        
         return img
 
-
+def cv2AddChineseText(img, text, position, textColor=(0, 255, 0), textSize=30):
+    if (isinstance(img, np.ndarray)):  # 判断是否OpenCV图片类型
+        img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    # 创建一个可以在给定图像上绘图的对象
+    draw = ImageDraw.Draw(img)
+    # 字体的格式
+    fontStyle = ImageFont.truetype(
+        "simsun.ttc", textSize, encoding="utf-8")
+    # 绘制文本
+    draw.text(position, text, textColor, font=fontStyle)
+    # 转换回OpenCV格式
+    return cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)
 def infer_fast(net, img, net_input_height_size, stride, upsample_ratio, cpu,
                pad_value=(0, 0, 0), img_mean=np.array([128, 128, 128], np.float32), img_scale=np.float32(1/256)):
     height, width, _ = img.shape
@@ -80,7 +94,47 @@ def infer_fast(net, img, net_input_height_size, stride, upsample_ratio, cpu,
 
     return heatmaps, pafs, scale, pad
 
+def get_set_pose(data,threshold = {"angle_shoulder_neck":[65.0,100],"rate_shoulder_neck":[0.5,1.0],"slope_2_shoulder":[20,-20]}):
+    
+    def process(data):
+        P = []
+        pose_L = [['1x','1y'],['2x','2y'],['5x','5y'],['0x','0y'],['14x','14y'],['16x','16y'],['15x','15y'],['17x','17y']]
+        for i in pose_L:
+            P.append([data.get(i[0]),data.get(i[1])])
+        return P
 
+    P = np.array(process(data))
+    vector_1 = P[1] - P[0]
+    vector_2 = P[3] - P[0]
+    left_shoulder = np.sqrt(vector_1.dot(vector_1))
+    neck = np.sqrt(vector_2.dot(vector_2))
+    dian = vector_1.dot(vector_2)
+    cos_ = dian/(left_shoulder * neck)
+    angle_shoulder_neck = np.arccos(cos_)*180/np.pi
+    rate_shoulder_neck = neck / left_shoulder
+    vector_3 = P[0] - P[2]
+    slope_2_shoulder = vector_3[1]
+    print(angle_shoulder_neck,rate_shoulder_neck,vector_3)
+    if angle_shoulder_neck < threshold.get("angle_shoulder_neck")[0]:
+        return 2
+    elif angle_shoulder_neck > threshold.get("angle_shoulder_neck")[1]:
+        return 1
+    elif rate_shoulder_neck < threshold.get("rate_shoulder_neck")[0]:
+        return 5
+    elif rate_shoulder_neck > threshold.get("rate_shoulder_neck")[1]:
+        return 6
+    elif slope_2_shoulder > threshold.get("slope_2_shoulder")[0]:
+        return 3
+    elif slope_2_shoulder < threshold.get("slope_2_shoulder")[1]:
+        return 4
+    else:
+        return 0
+        
+    
+        
+    
+    
+    
 def run_demo(net, classification_net,image_provider,mode, height_size, cpu, track, smooth):
     """
     mode == 0 : 图片
@@ -128,33 +182,23 @@ def run_demo(net, classification_net,image_provider,mode, height_size, cpu, trac
             pose = Pose(pose_keypoints, pose_entries[n][18])
             current_poses.append(pose)
         xxx = pose.draw(img)
-       
-
-        L = list(xxx.values())[1:-1]
-        for i in range((16-(len(L)))):
-            L.append(0)
-        input_net2 = torch.tensor(L, dtype = torch.float).reshape((1,16))
-        # input_net2.unsqueeze(0)
-        print(input_net2.shape)
-        out = classification_net(input_net2)
-        index = int(torch.argmax(out, axis=1))
-        
-        
+        # print(xxx)
+        index = get_set_pose(xxx)
         if track:
             track_poses(previous_poses, current_poses, smooth=smooth)
             previous_poses = current_poses
         
 
-        print(key_dict.get(index))
-            
-        cv2.putText(img, f"{key_dict.get(index)}", (40, 50), cv2.FONT_HERSHEY_PLAIN, 2.0, (0, 0, 255), 2)
-        img = cv2.addWeighted(orig_img, 0.6, img, 0.4, 0)
+        
+        imgL = cv2AddChineseText(orig_img,f"{classification.get(index)}",(20, 20),(255, 0, 0), 30)
+        # # cv2.putText(img, f"{key_dict.get(index)}", (40, 50), cv2.FONT_HERSHEY_PLAIN, 2.0, (0, 0, 255), 2)
+        img = cv2.addWeighted(imgL, 0.5, img, 0.5, 0)
+
         
         #for pose in current_poses:
             #cv2.rectangle(img, (pose.bbox[0], pose.bbox[1]),
                         #(pose.bbox[0] + pose.bbox[2], pose.bbox[1] + pose.bbox[3]), (0, 255, 0))
-            
-        
+
         return img
 
     if mode == 0:

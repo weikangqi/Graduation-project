@@ -11,9 +11,12 @@ if __name__ == "__main__":
     classification_net.eval()
     
     # with torch.no_grad():
-    inp  = torch.tensor([522,450,349,441,690,446,585,294,547,247,471,247,623,260,648,277],dtype=torch.float)
+    inp  = torch.tensor([],dtype=torch.float)
     
     inp = inp.unsqueeze(0)
+    
+    
+    
     
     print(inp.shape)
     out = classification_net(inp)

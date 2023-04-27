@@ -1,6 +1,6 @@
 import argparse
 from PIL import Image, ImageDraw, ImageFont
-
+import time
 import cv2
 import numpy as np
 import torch
@@ -157,7 +157,7 @@ def run_demo(net, classification_net,image_provider,mode, height_size, cpu, trac
         nonlocal num_keypoints
         nonlocal previous_poses
         nonlocal delay
-        
+        start = time.time()
         orig_img = img.copy()
         heatmaps, pafs, scale, pad = infer_fast(net, img, height_size, stride, upsample_ratio, cpu)
 
@@ -188,9 +188,9 @@ def run_demo(net, classification_net,image_provider,mode, height_size, cpu, trac
             track_poses(previous_poses, current_poses, smooth=smooth)
             previous_poses = current_poses
         
-
-        
-        imgL = cv2AddChineseText(orig_img,f"{classification.get(index)}",(20, 20),(255, 0, 0), 30)
+        end = time.time()
+        fps  = 1.0/(start - end)
+        imgL = cv2AddChineseText(orig_img,f"{classification.get(index)} fps:{fps:.1f}",(20, 20),(255, 0, 0), 30)
         # # cv2.putText(img, f"{key_dict.get(index)}", (40, 50), cv2.FONT_HERSHEY_PLAIN, 2.0, (0, 0, 255), 2)
         img = cv2.addWeighted(imgL, 0.5, img, 0.5, 0)
 
@@ -207,9 +207,11 @@ def run_demo(net, classification_net,image_provider,mode, height_size, cpu, trac
         key = cv2.waitKey(0)
         cv2.destroyAllWindows()
         
+        
            
     else:
         for img in image_provider:
+            
             img = inner(img)
             cv2.imshow('Lightweight Human Pose Estimation Python Demo', img)
             key = cv2.waitKey(1)
